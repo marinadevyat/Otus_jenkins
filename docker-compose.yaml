@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx
+    hostname: nginx
+    container_name: nginx
+    restart: always
+    ports:
+      - 80:80
+    networks:
+      - otus_selenoid
+    volumes:
+      - /otus/nginx:/etc/nginx/conf.d
+      - /etc/localtime:/etc/localtime
+
+  ggr:
+    image: aerokube/ggr:1.7.2
+    container_name: ggr
+    networks:
+      - otus_selenoid
+    volumes:
+      - /otus/selenoid/grid:/etc/grid:ro
+    command:
+      - "-guests-allowed"
+      - "-guests-quota=otus"
+      - "-verbose"
+      - "-quotaDir=/etc/grid/quota"
+
+  ggr-ui:
+    image: aerokube/ggr-ui:1.2.0
+    container_name: ggr_ui
+    hostname: ggr-ui
+    networks:
+      - otus_selenoid
+    volumes:
+      - /otus/selenoid/grid:/etc/grid-router:ro
+
+  selenoid-ui:
+    image: aerokube/selenoid-ui:1.10.11
+    container_name: selenoid-ui
+    ports:
+      - "8080:8080"
+    networks:
+      - otus_selenoid
+    command:
+      - "--selenoid-uri"
+      - "http://ggr-ui:8888"
+
+  registry:
+    image: registry
+    container_name: registry
+    restart: always
+    ports:
+      - 5005:5005
+    networks:
+      - otus_selenoid
+    volumes:
+      - /otus/jenkins/registry:/var/lib/registry
+    hostname: registry
+    environment:
+      - REGISTRY_HTTP_ADDR=0.0.0.0:5005
+ 
+  jenkins:
+    image: jenkins/jenkins
+    hostname: jenkins
+    container_name: jenkins
+    restart: always
+    user: root
+    depends_on:
+      - nginx
+      - registry
+    ports:
+      - 8090:8080
+    networks:
+      - otus_selenoid
+    environment:
+      - JAVA_OPTS="-Dhudsson.model.DownloadService.noSignatureCheck=true"
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - /otus/jenkins/jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  selenoid:
+    image: aerokube/selenoid:latest-release
+    container_name: selenoid
+    depends_on:
+      - nginx
+      - ggr
+      - ggr-ui
+      - selenoid-ui
+#    ports:
+#      - 4444:4444
+    networks:
+      - otus_selenoid
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /otus/selenoid/browsers.json:/etc/selenoid/browsers.json:ro
+    command:
+      - "-container-network=otus_selenoid"
+      - "-limit=12"
+
+  selenium_hub:
+    image: selenium/hub:3.4.0
+    ports:
+      - 4444:4444
+
+  nexus_7.1.1:
+    image: butomo1989/docker-android-x86-7.1.1
+    privileged: true
+    # Increase scale number if needed
+    scale: 1
+    ports:
+      - 6080:6080
+      - 5554:5554
+      - 5555:5555
+    environment:
+      - DEVICE=Nexus 5
+      - CONNECT_TO_GRID=True
+      - APPIUM=true
+      - SELENIUM_HOST=selenium_hub
+      - AUTO_RECORD=True
+
+networks:
+  otus_selenoid:
+    name: otus_selenoid
+
